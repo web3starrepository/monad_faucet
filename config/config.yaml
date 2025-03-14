@@ -1,0 +1,9 @@
+# Redis配置 | Redis Configuration
+CONFIG:
+  Dynamic: "http://b047753e6ce529b717c2__cr.au:c35ba8e6214e443a@45.250.255.245:823"  # API 可以动态修改的配置 | API can dynamically modify the configuration
+  nocaptchaApi: "389fe4ac-d3ac-4d04-bb01-1922b48c45e7" # nocaptcha 注册链接 https://www.nocaptcha.io/register?c=Ka7soJ
+  WalletFile: "config/wallet.txt" # 钱包文件路径 | Wallet file path
+  MaxRetries: 10 # 重试次数 | Retry times
+  Threads: 10 # 线程数 | Threads
+  
+

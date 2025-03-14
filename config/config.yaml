@@ -1,4 +1,4 @@
-# Redis配置 | Redis Configuration
+# 配置 | Configuration
 CONFIG:
   Dynamic: ""  # API 可以动态修改的配置 | API can dynamically modify the configuration
   nocaptchaApi: "389fe4ac-d3ac-4d04-bb01-1922b48c45e7" # nocaptcha 注册链接 https://www.nocaptcha.io/register?c=Ka7soJ

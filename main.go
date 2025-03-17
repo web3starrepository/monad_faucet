@@ -22,6 +22,8 @@ type goTask struct {
 	apiKey string
 }
 
+// BypassCloudflare 绕过Cloudflare验证获取访问令牌
+// 返回: 成功返回验证令牌字符串，失败返回空字符串
 func (c *goTask) BypassCloudflare() string {
 
 	token, err := nocaptcha.BypassCloudflare(nocaptcha.NocaptchaType{
@@ -120,6 +122,7 @@ func appendToFile(filename string, content string) error {
 // 修改处理函数
 func processWallet(wallet string, cfg config.Config) func() {
 	return func() {
+		// 初始化请求客户端（使用动态代理配置）
 		c := requests.NewClient(cfg.Dynamic, false)
 		client := goTask{
 			requ:   c,
@@ -129,7 +132,9 @@ func processWallet(wallet string, cfg config.Config) func() {
 		maxRetries := cfg.MaxRetries
 		success := false
 
+		// 重试机制循环
 		for i := 0; i < maxRetries; i++ {
+			// 执行水龙头领取操作
 			err := client.ClaimFaucet(wallet)
 			if err != nil {
 				logger.Logs.Warnf("[%s] 第 %d 次尝试失败: %v，正在重试...", wallet, i+1, err)
@@ -139,12 +144,15 @@ func processWallet(wallet string, cfg config.Config) func() {
 			break
 		}
 
+		// 处理最终结果
 		if success {
+			// 记录成功地址到good.txt
 			if err := appendToFile("good.txt", wallet); err != nil {
 				logger.Logs.Errorf("[%s] 记录成功地址失败: %v", wallet, err)
 			}
 			logger.Logs.Infof("[%s] 处理成功", wallet)
 		} else {
+			// 记录失败地址到fail.txt
 			if err := appendToFile("fail.txt", wallet); err != nil {
 				logger.Logs.Errorf("[%s] 记录失败地址失败: %v", wallet, err)
 			}
@@ -155,32 +163,52 @@ func processWallet(wallet string, cfg config.Config) func() {
 
 // 同时修改 ClaimFaucet 函数中的日志输出
 func (c *goTask) ClaimFaucet(address string) error {
+	// 获取Cloudflare验证令牌
 	cftoken := c.BypassCloudflare()
 	if cftoken == "" {
 		return fmt.Errorf("BypassCloudflare failed")
 	}
 
-	// Generate visitor ID using UUID
+	// 生成唯一访问者ID
 	visitorId := strings.ReplaceAll(uuid.New().String(), "-", "")
 
+	// 构建请求参数
 	postData := map[string]string{
 		"address":                 address,
 		"visitorId":               visitorId,
 		"cloudFlareResponseToken": cftoken,
 	}
 
+	// 发送POST请求到水龙头接口
 	resp, err := c.requ.R().
 		SetBody(postData).
-		Post("https://testnet.monad.xyz/api/faucet/claim")
+		// Post("https://testnet.monad.xyz/api/faucet/claim")
+		Post("https://faucet-claim.monadinfra.com/")
 
+	// 处理请求错误
 	if err != nil {
 		return fmt.Errorf("领取失败: %v", err)
 	}
 
+	// 处理405状态码（方法不允许）
 	if resp.GetStatusCode() == 405 {
 		return fmt.Errorf("请求返回 405")
 	}
 
+	// 解析响应JSON
+	var result struct {
+		Message string `json:"message"`
+	}
+	if err := resp.UnmarshalJson(&result); err != nil {
+		return fmt.Errorf("解析响应失败: %v", err)
+	}
+
+	// 验证响应内容
+	if result.Message != "Success" {
+		return fmt.Errorf("领取失败: %s", result.Message)
+	}
+
+	// 记录成功日志
 	logger.Logs.Info("[" + address + "] 领取成功")
 	logger.Logs.Info("[" + address + "] " + resp.String())
 	return nil

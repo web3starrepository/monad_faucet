@@ -4,6 +4,14 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Config 应用程序全局配置结构
+// 字段说明:
+//
+//	Dynamic: 动态配置参数
+//	NocaptchaApi: 验证码API密钥
+//	WalletFile: 钱包地址文件路径
+//	MaxRetries: 最大重试次数
+//	Threads: 并发线程数
 type Config struct {
 	Dynamic      string `mapstructure:"Dynamic"`
 	NocaptchaApi string `mapstructure:"nocaptchaApi"`
@@ -23,6 +31,8 @@ var (
 	Threads      int
 )
 
+// GetConfig 获取全局配置实例
+// 返回: 当前生效的配置对象
 func GetConfig() Config {
 	return GlobalConfig
 }
@@ -36,7 +46,11 @@ func initGlobalVars() {
 	Threads = GlobalConfig.Threads
 }
 
-// 修改 Init 函数
+// Init 配置初始化函数
+// 功能:
+// 1. 加载config.yaml配置文件
+// 2. 解析CONFIG配置节到全局变量
+// 3. 初始化各配置参数
 func Init() error {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")

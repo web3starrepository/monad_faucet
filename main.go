@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"monad/config"
 	"os"
+	"regexp"
 
 	"strings"
 
@@ -42,68 +43,34 @@ func (c *goTask) BypassCloudflare() string {
 
 }
 
-// 新版本不使用
-func (c *goTask) Bypassvercel(proxy string) (map[string]string, error) {
-	user_agent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
-	href := "https://testnet.monad.xyz/"
+func (c *goTask) GetverificationToken() (map[string]string, error) {
+	resp, err := c.requ.R().
+		SetHeaders(map[string]string{
+			"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		}).
+		Get("https://testnet.monad.xyz/")
 
-	headers := map[string]string{
-		"User-Token": c.apiKey,
-	}
-
-	jsonData := map[string]interface{}{
-		"href":       href,
-		"user_agent": user_agent,
-		"proxy":      proxy,
-		"timeout":    90,
-	}
-
-	resp, err := c.requ.R().SetHeaders(headers).SetBody(jsonData).Post("http://api.nocaptcha.cn/api/wanda/vercel/universal")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("请求失败: %v", err)
 	}
 
-	var result struct {
-		Status int    `json:"status"`
-		Msg    string `json:"msg"`
-		Data   struct {
-			Vcrcs string `json:"_vcrcs"`
-		} `json:"data"`
-		Extra map[string]string `json:"extra"`
+	// 使用正则表达式匹配
+	re := regexp.MustCompile(`requestVerification.*`)
+	matches := re.FindAllString(resp.String(), -1)
+
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("未找到验证信息")
 	}
 
-	if err := resp.UnmarshalJson(&result); err != nil {
-		return nil, err
-	}
+	// 提取 token 和 timestamp
+	token := matches[0][35:99]
+	timestamp := matches[0][118:131]
 
-	if result.Status != 1 {
-		if result.Msg == "未触发 vercel 盾" {
-			logger.Logs.Error("Bypass失败，错误信息：", result.Msg) // 添加错误信息打印
-			return nil, nil
-		}
-		logger.Logs.Error("Bypass失败，错误信息：", result.Msg) // 添加错误信息打印
-		return nil, fmt.Errorf("bypass failed: %s", result.Msg)
-	}
-
-	// 构建完整的 headers
-	requestHeaders := map[string]string{
-		"sec-ch-ua":                 result.Extra["sec-ch-ua"],
-		"sec-ch-ua-mobile":          "?0",
-		"sec-ch-ua-platform":        result.Extra["sec-ch-ua-platform"],
-		"upgrade-insecure-requests": "1",
-		"user-agent":                result.Extra["user-agent"],
-		"accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-		"sec-fetch-site":            "same-origin",
-		"sec-fetch-mode":            "navigate",
-		"sec-fetch-dest":            "document",
-		"referer":                   href,
-		"accept-encoding":           "gzip, deflate, br, zstd",
-		"accept-language":           result.Extra["accept-language"],
-		"cookie":                    "_vcrcs=" + result.Data.Vcrcs,
-		"priority":                  "u=0, i",
-	}
-
-	return requestHeaders, nil
+	// 返回包含token和timestamp的map
+	return map[string]string{
+		"x-request-timestamp":          timestamp,
+		"x-request-verification-token": token,
+	}, nil
 }
 
 // 添加文件写入函数
@@ -179,10 +146,16 @@ func (c *goTask) ClaimFaucet(address string) error {
 		"cloudFlareResponseToken": cftoken,
 	}
 
+	headers, err := c.GetverificationToken()
+	if err != nil {
+		return fmt.Errorf("GetverificationToken failed %v", err)
+	}
+	// 设置请求头
+	c.requ.SetCommonHeaders(headers)
+
 	// 发送POST请求到水龙头接口
 	resp, err := c.requ.R().
 		SetBody(postData).
-		// Post("https://testnet.monad.xyz/api/faucet/claim")
 		Post("https://faucet-claim.monadinfra.com/")
 
 	// 处理请求错误
@@ -232,6 +205,12 @@ func readWallets(filePath string) ([]string, error) {
 
 func main() {
 	logger.InitLogger(true)
+
+	// title
+	logger.Logs.Info("Monad Faucet")
+	logger.Logs.Info("Author: Web3StarRepository")
+	logger.Logs.Info("TG: @Web3um")
+	logger.Logs.Info("开源脚本，如果你是买的，那么你就是大呆比")
 
 	// 初始化配置
 	if err := config.Init(); err != nil {

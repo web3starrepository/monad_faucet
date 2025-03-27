@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"monad/config"
+	logger "monad/utils"
 	"os"
 	"regexp"
+	"time"
 
 	"strings"
 
@@ -12,10 +15,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/imroc/req/v3"
+	"github.com/tidwall/gjson"
+
 	"github.com/panjf2000/ants/v2"
-	"github.com/web3starrepository/web3utils/utils/logger"
-	"github.com/web3starrepository/web3utils/utils/nocaptcha"
-	"github.com/web3starrepository/web3utils/utils/requests"
 )
 
 type goTask struct {
@@ -27,15 +29,28 @@ type goTask struct {
 // 返回: 成功返回验证令牌字符串，失败返回空字符串
 func (c *goTask) BypassCloudflare() string {
 
-	token, err := nocaptcha.BypassCloudflare(nocaptcha.NocaptchaType{
-		User_Token_KEY:     c.apiKey,
-		Cloudflare_URL:     "https://testnet.monad.xyz/",
-		Cloudflare_SITEKEY: "0x4AAAAAAA-3X4Nd7hf3mNGx",
-		Request:            c.requ,
-	},
-	)
+	APi := "http://api.nocaptcha.io/api/wanda/cloudflare/universal"
+	headers := map[string]string{
+		"User-Token": c.apiKey,
+	}
 
-	if err != nil {
+	postData := map[string]string{
+		"href":    "https://testnet.monad.xyz/",
+		"proxy":   "usr:pwd@ip:port",
+		"sitekey": "0x4AAAAAAA-3X4Nd7hf3mNGx",
+	}
+
+	c.requ.R().
+		SetHeaders(headers).
+		SetBody(postData)
+	resp, err := c.requ.R().
+		Post(APi)
+	if err != nil || resp.StatusCode != 200 {
+		return ""
+	}
+
+	token := gjson.Get(resp.String(), "data.token").String()
+	if token == "" {
 		return ""
 	}
 
@@ -90,11 +105,20 @@ func appendToFile(filename string, content string) error {
 func processWallet(wallet string, cfg config.Config) func() {
 	return func() {
 		// 初始化请求客户端（使用动态代理配置）
-		c := requests.NewClient(cfg.Dynamic, false)
+
+		c := req.C().
+			SetTLSClientConfig(&tls.Config{
+				InsecureSkipVerify: true,
+			}).
+			ImpersonateChrome().
+			SetCommonRetryCount(3).
+			SetProxyURL(cfg.Dynamic)
+
 		client := goTask{
 			requ:   c,
 			apiKey: cfg.NocaptchaApi,
 		}
+		c.SetTimeout(20 * time.Second) // 总请求超时
 		logger.Logs.Info("[" + wallet + "] 正在处理钱包")
 		maxRetries := cfg.MaxRetries
 		success := false
@@ -131,11 +155,16 @@ func processWallet(wallet string, cfg config.Config) func() {
 // 同时修改 ClaimFaucet 函数中的日志输出
 func (c *goTask) ClaimFaucet(address string) error {
 	// 获取Cloudflare验证令牌
+	// cftoken := c.BypassCloudflare()
+	// if cftoken == "" {
+	// 	return fmt.Errorf("BypassCloudflare failed")
+	// }
+
 	cftoken := c.BypassCloudflare()
+
 	if cftoken == "" {
 		return fmt.Errorf("BypassCloudflare failed")
 	}
-
 	// 生成唯一访问者ID
 	visitorId := strings.ReplaceAll(uuid.New().String(), "-", "")
 
@@ -172,13 +201,14 @@ func (c *goTask) ClaimFaucet(address string) error {
 	var result struct {
 		Message string `json:"message"`
 	}
+
 	if err := resp.UnmarshalJson(&result); err != nil {
 		return fmt.Errorf("解析响应失败: %v", err)
 	}
 
 	// 验证响应内容
 	if result.Message != "Success" {
-		return fmt.Errorf("领取失败: %s", result.Message)
+		return fmt.Errorf("领取失败 消息体 [ %s ]", result.Message)
 	}
 
 	// 记录成功日志

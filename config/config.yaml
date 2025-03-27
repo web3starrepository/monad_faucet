@@ -1,9 +1,9 @@
 # 配置 | Configuration
 CONFIG:
-  Dynamic: "http://127.0.0.1:7897"  # API 可以动态修改的配置 | API can dynamically modify the configuration
+  Dynamic: "http://b047753e6ce529b717c2:c35ba8e6214e443a@45.250.255.245:823"  # API 可以动态修改的配置 | API can dynamically modify the configuration
   nocaptchaApi: "c801f19c-b66d-44a3-ab28-72c5ca2da71b" # nocaptcha 注册链接 https://www.nocaptcha.io/register?c=Ka7soJ
   WalletFile: "config/wallet.txt" # 钱包文件路径 | Wallet file path
-  MaxRetries: 10 # 重试次数 | Retry times
-  Threads: 2 # 线程数 | Threads
+  MaxRetries: 40 # 重试次数 | Retry times
+  Threads: 30 # 线程数 | Threads
   
 
